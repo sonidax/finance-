@@ -1,0 +1,330 @@
+@import "@fontsource/dm-sans/400.css";
+@import "@fontsource/dm-sans/500.css";
+@import "@fontsource/dm-sans/600.css";
+@import "@fontsource/dm-sans/700.css";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 217 91% 22%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 30% 94%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 173 58% 39%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 217 91% 22%;
+
+    --radius: 0.5rem;
+
+    --chart-1: 217 91% 22%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 142 71% 45%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 0 72% 51%;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 222 47% 8%;
+    --foreground: 210 40% 98%;
+
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 100% 60%;
+    --primary-foreground: 222 47% 8%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 173 58% 45%;
+    --accent-foreground: 222 47% 8%;
+
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 210 100% 60%;
+
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display;
+  }
+}
+
+@layer utilities {
+  .text-gain {
+    @apply text-success;
+  }
+  
+  .text-loss {
+    @apply text-destructive;
+  }
+
+  .bg-gain {
+    @apply bg-success/10 text-success;
+  }
+
+  .bg-loss {
+    @apply bg-destructive/10 text-destructive;
+  }
+
+  .ticker-scroll {
+    animation: ticker 30s linear infinite;
+  }
+
+  @keyframes ticker {
+    0% {
+      transform: translateX(0);
+    }
+    100% {
+      transform: translateX(-50%);
+    }
+  }
+
+  /* Premium Card Hover Effects */
+  .card-hover {
+    @apply transition-all duration-500 ease-out;
+  }
+
+  .card-hover:hover {
+    @apply shadow-card-hover -translate-y-2;
+  }
+
+  /* Magnetic Hover Effect */
+  .magnetic-hover {
+    @apply transition-transform duration-300;
+  }
+
+  /* Glass Effect */
+  .glass {
+    @apply bg-card/80 backdrop-blur-xl border border-border/50;
+  }
+
+  .glass-strong {
+    @apply bg-card/90 backdrop-blur-2xl border border-border/30;
+  }
+
+  /* Shimmer Button Effect */
+  .btn-shine {
+    @apply relative overflow-hidden;
+  }
+
+  .btn-shine::after {
+    content: '';
+    @apply absolute inset-0 -translate-x-full;
+    background: linear-gradient(90deg, transparent, hsl(var(--primary-foreground) / 0.2), transparent);
+    animation: shine 3s ease-in-out infinite;
+  }
+
+  @keyframes shine {
+    0%, 100% {
+      transform: translateX(-100%);
+    }
+    50% {
+      transform: translateX(100%);
+    }
+  }
+
+  /* Premium Gradient Backgrounds */
+  .gradient-primary {
+    @apply bg-gradient-to-r from-primary to-accent;
+  }
+
+  .gradient-hero {
+    @apply bg-gradient-to-br from-primary via-primary/90 to-accent;
+    background-size: 200% 200%;
+    animation: gradient-shift 8s ease infinite;
+  }
+
+  @keyframes gradient-shift {
+    0%, 100% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+
+  /* Glow Effects */
+  .glow {
+    @apply shadow-glow;
+  }
+
+  .glow-accent {
+    box-shadow: 0 0 30px hsl(var(--accent) / 0.4);
+  }
+
+  /* Text Gradient */
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent;
+  }
+
+  /* Animated Border */
+  .border-gradient {
+    @apply relative;
+  }
+
+  .border-gradient::before {
+    content: '';
+    @apply absolute inset-0 rounded-lg p-[1px];
+    background: linear-gradient(135deg, hsl(var(--accent)), hsl(var(--primary)));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+
+  /* Staggered Animation Delays */
+  .stagger-1 { animation-delay: 0.1s; }
+  .stagger-2 { animation-delay: 0.2s; }
+  .stagger-3 { animation-delay: 0.3s; }
+  .stagger-4 { animation-delay: 0.4s; }
+  .stagger-5 { animation-delay: 0.5s; }
+  .stagger-6 { animation-delay: 0.6s; }
+
+  /* Hover Underline Animation */
+  .hover-underline {
+    @apply relative;
+  }
+
+  .hover-underline::after {
+    content: '';
+    @apply absolute bottom-0 left-0 w-0 h-0.5 bg-accent transition-all duration-300;
+  }
+
+  .hover-underline:hover::after {
+    @apply w-full;
+  }
+
+  /* Scale on Hover */
+  .hover-scale {
+    @apply transition-transform duration-300 ease-out;
+  }
+
+  .hover-scale:hover {
+    @apply scale-105;
+  }
+
+  /* Icon Rotate on Hover */
+  .hover-rotate {
+    @apply transition-transform duration-300;
+  }
+
+  .hover-rotate:hover {
+    @apply rotate-12;
+  }
+
+  /* Pulse Ring */
+  .pulse-ring {
+    @apply relative;
+  }
+
+  .pulse-ring::before {
+    content: '';
+    @apply absolute inset-0 rounded-full animate-ping bg-accent/30;
+  }
+
+  /* Smooth reveal container */
+  .reveal-container {
+    @apply overflow-hidden;
+  }
+
+  /* Number counter animation */
+  @property --num {
+    syntax: "<integer>";
+    initial-value: 0;
+    inherits: false;
+  }
+
+  .counter-animate {
+    animation: counter 2s ease-out forwards;
+    counter-reset: num var(--num);
+  }
+
+  /* Floating particles background */
+  .particles-bg {
+    @apply relative overflow-hidden;
+  }
+
+  .particles-bg::before {
+    content: '';
+    @apply absolute inset-0 opacity-30;
+    background-image: radial-gradient(circle at 20% 50%, hsl(var(--accent) / 0.3) 0%, transparent 50%),
+                      radial-gradient(circle at 80% 20%, hsl(var(--primary) / 0.2) 0%, transparent 40%),
+                      radial-gradient(circle at 40% 80%, hsl(var(--accent) / 0.2) 0%, transparent 50%);
+    animation: float-slow 10s ease-in-out infinite;
+  }
+}
