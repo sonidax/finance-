@@ -17,160 +17,189 @@ export interface IPOLotRules {
   quickPresets: number[];
 }
 
-export function calculateIPOLotRules(ipo: IPO | null, investorType: "Retail" | "HNI"): IPOLotRules {
-  if (!ipo) {
-    return {
-      isSME: false,
-      boardType: "MAINBOARD",
-      lotSize: 1,
-      upperPrice: 0,
-      lotCost: 0,
-      retailMinLots: 1,
-      retailMaxLots: 13,
-      hniMinLots: 14,
-      hniMaxLots: 34,
-      minLots: 1,
-      maxLots: 13,
-      helperText: "",
-      quickPresets: [1],
-    };
+/**
+ * Robustly parses upper price band from any string format (e.g., "₹1,860 - ₹1,960", "1860 - 1960", "₹1960", 1960)
+ */
+export function parseUpperPrice(priceBand?: string | number): number {
+  if (typeof priceBand === "number") {
+    return isNaN(priceBand) || priceBand <= 0 ? 100 : priceBand;
+  }
+  if (!priceBand) return 100;
+
+  let str = String(priceBand);
+  if (str.includes("-")) {
+    const parts = str.split("-");
+    str = parts[parts.length - 1]; // upper band
   }
 
-  const isSME = ipo.boardtype?.toLowerCase() === "sme";
-  const boardType = isSME ? "SME" : "MAINBOARD";
+  // Strip all non-numeric characters except dots
+  const clean = str.replace(/[^0-9.]/g, "");
+  const parsed = parseFloat(clean);
 
-  // Parse upper price band
-  const upperPrice = parseFloat(
-    ipo.price_band.includes("-") 
-      ? ipo.price_band.split("-")[1].trim() 
-      : ipo.price_band.replace(/[^0-9.]/g, "")
-  ) || 100;
+  return isNaN(parsed) || parsed <= 0 ? 100 : parsed;
+}
 
-  const lotSize = ipo.lot_size || 1;
-  const lotCost = upperPrice * lotSize;
+export function calculateIPOLotRules(ipo: IPO | null, investorType: "Retail" | "HNI"): IPOLotRules {
+  const safeDefaults: IPOLotRules = {
+    isSME: false,
+    boardType: "MAINBOARD",
+    lotSize: 1,
+    upperPrice: 100,
+    lotCost: 100,
+    retailMinLots: 1,
+    retailMaxLots: 13,
+    hniMinLots: 14,
+    hniMaxLots: 34,
+    minLots: 1,
+    maxLots: 13,
+    helperText: "Retail applications are limited to 13 lots.",
+    quickPresets: [1, 2, 5, 10, 13],
+  };
 
-  // SEBI ₹2,00,000 Retail limit
-  const SEBI_RETAIL_CAP = 200000;
+  if (!ipo) return safeDefaults;
 
-  if (isSME) {
-    // ── SME IPO RULES ──
-    const retailMinLots = 1;
-    const retailMaxLots = lotCost > 0 ? Math.max(1, Math.floor(SEBI_RETAIL_CAP / lotCost)) : 1;
-    const hniMinLots = 2; // SME HNI starts at 2 lots
-    const hniMaxLots = 10; // SME HNI max 10 lots
+  try {
+    const isSME = (ipo.boardtype || (ipo as any).ipoType || "").toString().toLowerCase() === "sme";
+    const boardType: "MAINBOARD" | "SME" = isSME ? "SME" : "MAINBOARD";
 
-    if (investorType === "Retail") {
-      const minLots = retailMinLots;
-      const maxLots = retailMaxLots;
-      const helperText = retailMaxLots === 1
-        ? `Retail investors can apply for only 1 lot (₹${lotCost.toLocaleString("en-IN")}) in this SME IPO.`
-        : `Retail applications are limited to ${retailMaxLots} lots (₹2 lakh limit).`;
-      
-      const quickPresets = [1];
-      if (retailMaxLots > 1) {
-        for (let i = 2; i <= retailMaxLots; i++) quickPresets.push(i);
+    // Safe field extraction with fallbacks
+    const upperPrice = parseUpperPrice((ipo as any).upperPrice ?? ipo.price_band);
+    const lotSize = Math.max(1, parseInt(String((ipo as any).lotSize ?? ipo.lot_size ?? 1), 10) || 1);
+    const lotCost = upperPrice * lotSize;
+
+    const SEBI_RETAIL_CAP = 200000;
+
+    // Check optional metadata overrides on ipo object
+    const customRetail = (ipo as any).retail;
+    const customHni = (ipo as any).hni;
+
+    if (isSME) {
+      // ── SME IPO RULES ──
+      const retailMinLots = customRetail?.minLots ?? 1;
+      const calculatedMax = lotCost > 0 ? Math.max(1, Math.floor(SEBI_RETAIL_CAP / lotCost)) : 1;
+      const retailMaxLots = customRetail?.maxLots ?? calculatedMax;
+
+      const hniMinLots = customHni?.minLots ?? (retailMaxLots + 1 > 1 ? 2 : 2);
+      const hniMaxLots = customHni?.maxLots ?? 10;
+
+      if (investorType === "Retail") {
+        const minLots = retailMinLots;
+        const maxLots = Math.max(minLots, retailMaxLots);
+        const helperText = maxLots === 1
+          ? `Retail investors can apply for only 1 lot (₹${lotCost.toLocaleString("en-IN")}) in this SME IPO.`
+          : `Retail applications are limited to ${maxLots} lots (₹2 lakh limit).`;
+
+        const quickPresets: number[] = [];
+        for (let i = minLots; i <= maxLots; i++) quickPresets.push(i);
+        if (quickPresets.length === 0) quickPresets.push(1);
+
+        return {
+          isSME: true,
+          boardType: "SME",
+          lotSize,
+          upperPrice,
+          lotCost,
+          retailMinLots,
+          retailMaxLots: maxLots,
+          hniMinLots,
+          hniMaxLots,
+          minLots,
+          maxLots,
+          helperText,
+          quickPresets,
+        };
+      } else {
+        // SME HNI
+        const minLots = hniMinLots;
+        const maxLots = Math.max(minLots, hniMaxLots);
+        const helperText = `SME HNI applications require between ${minLots} and ${maxLots} lots.`;
+        
+        const presets = [minLots, Math.floor((minLots + maxLots) / 2), maxLots]
+          .filter((v, i, a) => a.indexOf(v) === i && v >= minLots && v <= maxLots);
+
+        return {
+          isSME: true,
+          boardType: "SME",
+          lotSize,
+          upperPrice,
+          lotCost,
+          retailMinLots,
+          retailMaxLots,
+          hniMinLots: minLots,
+          hniMaxLots: maxLots,
+          minLots,
+          maxLots,
+          helperText,
+          quickPresets: presets.length > 0 ? presets : [2, 5, 8, 10],
+        };
       }
-
-      return {
-        isSME: true,
-        boardType: "SME",
-        lotSize,
-        upperPrice,
-        lotCost,
-        retailMinLots,
-        retailMaxLots,
-        hniMinLots,
-        hniMaxLots,
-        minLots,
-        maxLots,
-        helperText,
-        quickPresets,
-      };
     } else {
-      // SME HNI
-      const minLots = hniMinLots;
-      const maxLots = hniMaxLots;
-      const helperText = `SME HNI applications require between ${hniMinLots} and ${hniMaxLots} lots.`;
-      const quickPresets = [2, 5, 8, 10];
+      // ── MAINBOARD IPO RULES ──
+      const retailMinLots = customRetail?.minLots ?? 1;
+      const calculatedMax = lotCost > 0 ? Math.max(1, Math.floor(SEBI_RETAIL_CAP / lotCost)) : 13;
+      const retailMaxLots = customRetail?.maxLots ?? calculatedMax;
 
-      return {
-        isSME: true,
-        boardType: "SME",
-        lotSize,
-        upperPrice,
-        lotCost,
-        retailMinLots,
-        retailMaxLots,
-        hniMinLots,
-        hniMaxLots,
-        minLots,
-        maxLots,
-        helperText,
-        quickPresets,
-      };
+      const hniMinLots = customHni?.minLots ?? (retailMaxLots + 1);
+      const hniMaxLots = customHni?.maxLots ?? Math.min(100, Math.max(hniMinLots + 10, Math.floor(hniMinLots * 2.5)));
+
+      if (investorType === "Retail") {
+        const minLots = retailMinLots;
+        const maxLots = Math.max(minLots, retailMaxLots);
+        const helperText = `Retail applications are limited to ${maxLots} lots (₹2 lakh SEBI limit). Select HNI for larger applications.`;
+
+        const quickPresets = [1, 2, 5, 10, maxLots]
+          .filter((val, idx, arr) => arr.indexOf(val) === idx && val <= maxLots && val >= minLots);
+
+        return {
+          isSME: false,
+          boardType: "MAINBOARD",
+          lotSize,
+          upperPrice,
+          lotCost,
+          retailMinLots,
+          retailMaxLots: maxLots,
+          hniMinLots,
+          hniMaxLots,
+          minLots,
+          maxLots,
+          helperText,
+          quickPresets: quickPresets.length > 0 ? quickPresets : [1],
+        };
+      } else {
+        // Mainboard HNI
+        const minLots = hniMinLots;
+        const maxLots = Math.max(minLots, hniMaxLots);
+        const helperText = `HNI applications start from ${minLots} lots up to ${maxLots} lots.`;
+
+        const step = Math.max(1, Math.floor((maxLots - minLots) / 4));
+        const quickPresets = [
+          minLots,
+          minLots + step,
+          minLots + step * 2,
+          minLots + step * 3,
+          maxLots
+        ].filter((val, idx, arr) => arr.indexOf(val) === idx && val <= maxLots && val >= minLots);
+
+        return {
+          isSME: false,
+          boardType: "MAINBOARD",
+          lotSize,
+          upperPrice,
+          lotCost,
+          retailMinLots,
+          retailMaxLots,
+          hniMinLots: minLots,
+          hniMaxLots: maxLots,
+          minLots,
+          maxLots,
+          helperText,
+          quickPresets: quickPresets.length > 0 ? quickPresets : [minLots, maxLots],
+        };
+      }
     }
-  } else {
-    // ── MAINBOARD IPO RULES ──
-    const retailMinLots = 1;
-    const retailMaxLots = lotCost > 0 ? Math.max(1, Math.floor(SEBI_RETAIL_CAP / lotCost)) : 13;
-    const hniMinLots = retailMaxLots + 1; // Starts at Retail + 1 (e.g. 14)
-    const hniMaxLots = Math.min(100, Math.max(hniMinLots + 10, Math.floor(hniMinLots * 2.5))); // e.g. 34
-
-    if (investorType === "Retail") {
-      const minLots = retailMinLots;
-      const maxLots = retailMaxLots;
-      const helperText = `Retail applications are limited to ${retailMaxLots} lots (₹2 lakh SEBI limit). Select HNI for larger applications.`;
-      
-      // Presets up to maxRetailLots
-      const quickPresets = [1, 2, 5, 10, maxRetailLots]
-        .filter((val, idx, arr) => arr.indexOf(val) === idx && val <= maxRetailLots);
-
-      return {
-        isSME: false,
-        boardType: "MAINBOARD",
-        lotSize,
-        upperPrice,
-        lotCost,
-        retailMinLots,
-        retailMaxLots,
-        hniMinLots,
-        hniMaxLots,
-        minLots,
-        maxLots,
-        helperText,
-        quickPresets,
-      };
-    } else {
-      // Mainboard HNI
-      const minLots = hniMinLots;
-      const maxLots = hniMaxLots;
-      const helperText = `HNI applications start from ${hniMinLots} lots up to ${hniMaxLots} lots.`;
-      
-      const step = Math.max(1, Math.floor((hniMaxLots - hniMinLots) / 4));
-      const quickPresets = [
-        hniMinLots,
-        hniMinLots + step,
-        hniMinLots + step * 2,
-        hniMinLots + step * 3,
-        hniMaxLots
-      ].filter((val, idx, arr) => arr.indexOf(val) === idx && val <= hniMaxLots);
-
-      return {
-        isSME: false,
-        boardType: "MAINBOARD",
-        lotSize,
-        upperPrice,
-        lotCost,
-        retailMinLots,
-        retailMaxLots,
-        hniMinLots,
-        hniMaxLots,
-        minLots,
-        maxLots,
-        helperText,
-        quickPresets,
-      };
-    }
+  } catch (err) {
+    console.error("Error in calculateIPOLotRules:", err);
+    return safeDefaults;
   }
 }
 
