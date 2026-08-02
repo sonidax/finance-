@@ -6,23 +6,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
-  Calendar, 
-  Clock, 
+  X, 
+  XCircle, 
+  ChevronUp, 
+  ChevronDown, 
+  Check, 
   TrendingUp, 
   Users, 
-  Plus, 
-  Minus, 
-  CheckCircle2, 
-  AlertCircle, 
-  Building2, 
-  UserCheck, 
-  ShieldCheck, 
-  CreditCard,
-  Zap,
-  Sparkles
+  Calendar, 
+  Clock, 
+  ArrowRight,
+  Info
 } from "lucide-react";
 import { useIPOs, IPO } from "@/hooks/useIPOs";
 import { useIPOBids } from "@/hooks/useIPOBids";
@@ -35,70 +32,72 @@ export default function IPOBidding() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const { ipos, loading: iposLoading, error: iposError } = useIPOs();
-  const { submitBid } = useIPOBids();
+  const { bids, submitBid } = useIPOBids();
 
-  // Dialog state
+  // Modal State
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedIPO, setSelectedIPO] = useState<IPO | null>(null);
 
-  // Application Dashboard Form State
-  const [lotCount, setLotCount] = useState<number>(1);
+  // Form State matching Angel One UI
+  const [investorType, setInvestorType] = useState<'Retail' | 'HNI'>('Retail');
+  const [numberOfLots, setNumberOfLots] = useState<string>("1");
   const [bidPrice, setBidPrice] = useState<string>("");
-  const [investorType, setInvestorType] = useState<'Retail' | 'sHNI' | 'bHNI'>('Retail');
-  const [panNumber, setPanNumber] = useState("");
-  const [dpId, setDpId] = useState("");
-  const [upiId, setUpiId] = useState("");
+  const [upiId, setUpiId] = useState<string>("shilpeshkrupali-2@okhdfcbank");
+  const [isEditingUpi, setIsEditingUpi] = useState(false);
+  const [showAmountBreakdown, setShowAmountBreakdown] = useState(false);
+  const [panNumber, setPanNumber] = useState("ABCDE1234F");
+  const [dpId, setDpId] = useState("1208160012345678");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const openIPOs = ipos.filter((ipo) => ipo.status === "Open");
   const upcomingIPOs = ipos.filter((ipo) => ipo.status === "Upcoming");
   const listedIPOs = ipos.filter((ipo) => ipo.status === "Listed");
 
+  // Check if user has already applied for the selected IPO
+  const existingBid = selectedIPO 
+    ? bids.find(b => b.ipo_id === selectedIPO.id || b.ipo_name === selectedIPO.ipo_name)
+    : null;
+
   // Auto-open application modal if redirecting back after login with ?applyIpoId=X
   useEffect(() => {
     const applyIpoId = searchParams.get("applyIpoId");
     if (applyIpoId && ipos.length > 0) {
       const found = ipos.find((i) => String(i.id) === applyIpoId);
-      if (found) {
-        if (user) {
-          openApplicationModal(found);
-          // Clean up search params after opening
-          searchParams.delete("applyIpoId");
-          setSearchParams(searchParams, { replace: true });
-        }
+      if (found && user) {
+        openApplicationModal(found);
+        searchParams.delete("applyIpoId");
+        setSearchParams(searchParams, { replace: true });
       }
     }
   }, [searchParams, ipos, user]);
 
   const openApplicationModal = (ipo: IPO) => {
     setSelectedIPO(ipo);
-    const isSME = ipo.boardtype?.toLowerCase() === 'sme';
     const upperPrice = ipo.price_band.includes("-") 
       ? ipo.price_band.split("-")[1].trim() 
       : ipo.price_band;
     
     setBidPrice(upperPrice);
+    setNumberOfLots("1");
+    setInvestorType('Retail');
+    setIsEditingUpi(false);
+    setShowAmountBreakdown(false);
     
-    if (isSME) {
-      setInvestorType('sHNI');
-      setLotCount(1);
+    if (user?.email) {
+      const userPrefix = user.email.split('@')[0];
+      setUpiId(`${userPrefix}@okhdfcbank`);
     } else {
-      setInvestorType('Retail');
-      setLotCount(1);
+      setUpiId("shilpeshkrupali-2@okhdfcbank");
     }
 
-    setPanNumber(user?.email ? "ABCDE1234F" : "");
-    setDpId("1208160012345678");
-    setUpiId(user?.email ? `${user.email.split('@')[0]}@upi` : "");
     setIsDialogOpen(true);
   };
 
-  // Handler for Apply Now button
   const handleApplyClick = (ipo: IPO) => {
     if (!user) {
       toast({
         title: "Login Required",
-        description: "Please sign in to proceed with your IPO Application Dashboard.",
+        description: "Please log in to apply for an IPO.",
         variant: "destructive",
       });
       navigate("/login", { state: { from: "/ipo-bidding", applyIpoId: ipo.id } });
@@ -107,125 +106,58 @@ export default function IPOBidding() {
     openApplicationModal(ipo);
   };
 
-  // Handler for dialog close
   const handleDialogClose = (open: boolean) => {
     setIsDialogOpen(open);
     if (!open) {
-      setLotCount(1);
-      setBidPrice("");
       setSelectedIPO(null);
-      setInvestorType('Retail');
-      setPanNumber("");
-      setDpId("");
-      setUpiId("");
+      setNumberOfLots("1");
+      setBidPrice("");
+      setIsEditingUpi(false);
+      setShowAmountBreakdown(false);
     }
   };
 
-  // Lot increment / decrement handlers
-  const handleIncrementLots = () => {
-    if (!selectedIPO) return;
-    const isSME = selectedIPO.boardtype?.toLowerCase() === 'sme';
-    const maxLots = isSME ? 50 : (investorType === 'Retail' ? 13 : 100);
-    if (lotCount < maxLots) {
-      const next = lotCount + 1;
-      setLotCount(next);
-      checkAndUpdateCategory(next, selectedIPO);
-    }
-  };
+  const lotCount = Math.max(1, parseInt(numberOfLots || "1", 10));
+  const lotShares = selectedIPO?.lot_size || 1;
+  const totalShares = lotCount * lotShares;
+  const unitPrice = parseFloat(bidPrice || (selectedIPO?.price_band.includes("-") ? selectedIPO.price_band.split("-")[1] : selectedIPO?.price_band) || "0");
+  const totalPayableAmount = totalShares * unitPrice;
 
-  const handleDecrementLots = () => {
-    if (lotCount > 1) {
-      const next = lotCount - 1;
-      setLotCount(next);
-      if (selectedIPO) checkAndUpdateCategory(next, selectedIPO);
-    }
-  };
-
-  const handleSetLots = (num: number) => {
-    setLotCount(num);
-    if (selectedIPO) checkAndUpdateCategory(num, selectedIPO);
-  };
-
-  const checkAndUpdateCategory = (lots: number, ipo: IPO) => {
-    const isSME = ipo.boardtype?.toLowerCase() === 'sme';
-    if (isSME) return;
-
-    const price = parseFloat(bidPrice || ipo.price_band.split("-")[1] || "100");
-    const totalAmount = lots * ipo.lot_size * price;
-
-    if (totalAmount > 200000 && investorType === 'Retail') {
-      setInvestorType('sHNI');
-      toast({
-        title: "Category Switched to sHNI",
-        description: "Investment amount exceeds ₹2,00,000 limit for Retailers.",
-      });
-    } else if (totalAmount <= 200000 && (investorType === 'sHNI' || investorType === 'bHNI')) {
-      if (lots < 14) {
-        setInvestorType('Retail');
-      }
-    }
-  };
-
-  const handleBidSubmit = async (e: React.MouseEvent<HTMLButtonElement>) => {
+  const handleBidSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    e.stopPropagation();
-
     if (!selectedIPO) return;
 
-    if (!panNumber.trim()) {
+    if (!upiId.trim()) {
       toast({
-        title: "PAN Number Required",
-        description: "Please enter your 10-character PAN number.",
+        title: "UPI ID Required",
+        description: "Please enter a valid UPI ID for mandate payment.",
         variant: "destructive",
       });
       return;
     }
-
-    const panPattern = /^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/;
-    if (!panPattern.test(panNumber.trim())) {
-      toast({
-        title: "Invalid PAN Format",
-        description: "Format must be 5 letters, 4 digits, 1 letter (e.g. ABCDE1234F).",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!dpId.trim()) {
-      toast({
-        title: "DP ID Required",
-        description: "Please enter your 16-digit Demat / DP ID.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const currentPrice = parseFloat(bidPrice || selectedIPO.price_band.split("-")[1]);
-    const totalInvestment = lotCount * selectedIPO.lot_size * currentPrice;
 
     setIsSubmitting(true);
     try {
       await submitBid({
         ipo_id: selectedIPO.id,
-        investor_type: investorType === 'Retail' ? 'Retail' : 'HNI',
+        investor_type: investorType,
         number_of_lots: lotCount,
-        bid_price: currentPrice,
-        total_investment: totalInvestment,
-        pan_number: panNumber.trim().toUpperCase(),
-        dp_id: dpId.trim(),
+        bid_price: unitPrice,
+        total_investment: totalPayableAmount,
+        pan_number: panNumber,
+        dp_id: dpId,
       });
 
       toast({
-        title: "🎉 IPO Bid Application Submitted!",
-        description: `Application for ${selectedIPO.ipo_name} (${lotCount} ${lotCount === 1 ? 'Lot' : 'Lots'}, ₹${totalInvestment.toLocaleString('en-IN')}) successfully placed. UPI Mandate sent to ${upiId || 'your registered UPI'}.`,
+        title: "🎉 IPO Application Placed Successfully!",
+        description: `Your bid for ${selectedIPO.ipo_name} (${lotCount} ${lotCount === 1 ? 'Lot' : 'Lots'}, ₹${totalPayableAmount.toLocaleString('en-IN')}) has been submitted. UPI Mandate request sent to ${upiId}.`,
       });
 
       setIsDialogOpen(false);
-      handleDialogClose(false);
     } catch (err: any) {
       toast({
-        title: "Submission Failed",
-        description: err.message || "Something went wrong. Please try again.",
+        title: "Application Failed",
+        description: err.message || "Failed to submit bid. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -236,114 +168,34 @@ export default function IPOBidding() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Open":
-        return "bg-success/10 text-success border-success/20";
+        return "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400";
       case "Upcoming":
-        return "bg-warning/10 text-warning border-warning/20";
+        return "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400";
       case "Listed":
-        return "bg-muted text-muted-foreground border-border";
+        return "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400";
       default:
-        return "bg-muted text-muted-foreground border-border";
+        return "bg-slate-100 text-slate-600 border-slate-200";
     }
   };
-
-  const IPOCard = ({ ipo }: { ipo: IPO }) => (
-    <Card className="card-hover relative overflow-hidden border-border/70 flex flex-col justify-between">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className={getStatusColor(ipo.status)}>
-              {ipo.status}
-            </Badge>
-            <Badge variant="secondary" className="text-[10px] font-bold uppercase tracking-wider">
-              {ipo.boardtype || "Mainboard"}
-            </Badge>
-          </div>
-          <span className={`text-sm font-bold ${ipo.gmp >= 0 ? 'text-success' : 'text-destructive'}`}>
-            GMP: ₹{ipo.gmp}
-          </span>
-        </div>
-        <CardTitle className="font-display text-xl mt-3 text-foreground">{ipo.ipo_name}</CardTitle>
-        <CardDescription>{ipo.type} Issue</CardDescription>
-      </CardHeader>
-
-      <CardContent className="space-y-4">
-        <div className="space-y-2.5 text-sm p-3 rounded-lg bg-muted/30 border border-border/40">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground flex items-center gap-1.5">
-              <TrendingUp className="h-4 w-4 text-primary" />
-              Price Band
-            </span>
-            <span className="font-bold text-foreground">₹{ipo.price_band}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground flex items-center gap-1.5">
-              <Users className="h-4 w-4 text-accent" />
-              Lot Size
-            </span>
-            <span className="font-semibold text-foreground">{ipo.lot_size} shares / lot</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Issue Size</span>
-            <span className="font-semibold text-foreground">₹{ipo.issue_size}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground flex items-center gap-1.5">
-              <Calendar className="h-4 w-4 text-success" />
-              Open - Close
-            </span>
-            <span className="font-medium">
-              {new Date(ipo.open_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} - {new Date(ipo.close_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-            </span>
-          </div>
-        </div>
-
-        {/* Apply Now button */}
-        {ipo.status === "Open" && (
-          <Button
-            className="w-full font-semibold btn-shine"
-            type="button"
-            onClick={() => handleApplyClick(ipo)}
-          >
-            Apply Now
-          </Button>
-        )}
-        {ipo.status === "Upcoming" && (
-          <Button variant="secondary" className="w-full" disabled>
-            Coming Soon
-          </Button>
-        )}
-        {ipo.status === "Listed" && (
-          <Button variant="outline" className="w-full" disabled>
-            Listed on {new Date(ipo.listing_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-          </Button>
-        )}
-      </CardContent>
-    </Card>
-  );
-
-  // Calculations for current selected IPO in Modal
-  const isSME = selectedIPO?.boardtype?.toLowerCase() === 'sme';
-  const unitPrice = parseFloat(bidPrice || selectedIPO?.price_band.split("-")[1] || "0");
-  const lotShares = selectedIPO?.lot_size || 1;
-  const totalShares = lotCount * lotShares;
-  const totalInvestmentAmount = totalShares * unitPrice;
 
   return (
     <Layout>
       <div className="container py-8 space-y-8">
-        {/* Page Header */}
-        <div>
-          <h1 className="font-display text-3xl md:text-4xl font-bold text-foreground">
-            IPO Bidding Dashboard
-          </h1>
-          <p className="text-muted-foreground mt-2">
-            Apply for active Mainboard & SME IPOs, customize your lot size, and track your bids.
-          </p>
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="font-display text-3xl md:text-4xl font-bold text-foreground">
+              IPO Bidding
+            </h1>
+            <p className="text-muted-foreground mt-2">
+              Apply for active and upcoming IPOs directly with cut-off price bidding.
+            </p>
+          </div>
         </div>
 
         {iposLoading && (
           <Card className="p-12 text-center">
-            <p className="text-muted-foreground">Loading active IPOs…</p>
+            <p className="text-muted-foreground">Loading IPOs…</p>
           </Card>
         )}
 
@@ -357,11 +209,11 @@ export default function IPOBidding() {
           <Tabs defaultValue="open" className="w-full">
             <TabsList className="mb-6">
               <TabsTrigger value="open" className="gap-2">
-                Open Issues
-                <Badge variant="secondary" className="ml-1">{openIPOs.length}</Badge>
+                Open IPOs
+                <Badge variant="secondary" className="ml-1 bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">{openIPOs.length}</Badge>
               </TabsTrigger>
               <TabsTrigger value="upcoming" className="gap-2">
-                Upcoming Issues
+                Upcoming IPOs
                 <Badge variant="secondary" className="ml-1">{upcomingIPOs.length}</Badge>
               </TabsTrigger>
               <TabsTrigger value="listed" className="gap-2">
@@ -370,12 +222,69 @@ export default function IPOBidding() {
               </TabsTrigger>
             </TabsList>
 
+            {/* OPEN IPOS GRID */}
             <TabsContent value="open">
               {openIPOs.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {openIPOs.map((ipo) => (
-                    <IPOCard key={ipo.id} ipo={ipo} />
-                  ))}
+                  {openIPOs.map((ipo) => {
+                    const isSME = ipo.boardtype?.toLowerCase() === "sme";
+                    return (
+                      <Card key={ipo.id} className="card-hover border-border/80 rounded-xl overflow-hidden bg-card flex flex-col justify-between">
+                        <CardHeader className="pb-3 pt-5 px-5">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <h3 className="font-bold text-lg text-foreground leading-tight">{ipo.ipo_name}</h3>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${
+                                  isSME 
+                                    ? "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200" 
+                                    : "bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300 border border-purple-200"
+                                }`}>
+                                  {ipo.boardtype || "MAINBOARD"}
+                                </span>
+                              </div>
+                            </div>
+                            <span className={`text-sm font-bold ${ipo.gmp >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              GMP: ₹{ipo.gmp}
+                            </span>
+                          </div>
+                        </CardHeader>
+
+                        <CardContent className="px-5 pb-5 space-y-4">
+                          <div className="grid grid-cols-2 gap-3 text-xs p-3 rounded-lg bg-muted/30 border border-border/40">
+                            <div>
+                              <span className="text-muted-foreground block mb-0.5">Price Band</span>
+                              <span className="font-bold text-sm text-foreground">₹{ipo.price_band}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground block mb-0.5">Lot Size</span>
+                              <span className="font-semibold text-foreground">{ipo.lot_size} shares / lot</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground block mb-0.5">Issue Size</span>
+                              <span className="font-semibold text-foreground">₹{ipo.issue_size}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground block mb-0.5">Closes On</span>
+                              <span className="font-semibold text-foreground">
+                                {new Date(ipo.close_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              </span>
+                            </div>
+                          </div>
+
+                          <Button
+                            className="w-full font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg h-11 transition-all"
+                            type="button"
+                            onClick={() => handleApplyClick(ipo)}
+                          >
+                            APPLY
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                 </div>
               ) : (
                 <Card className="p-12 text-center">
@@ -388,12 +297,27 @@ export default function IPOBidding() {
               {upcomingIPOs.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {upcomingIPOs.map((ipo) => (
-                    <IPOCard key={ipo.id} ipo={ipo} />
+                    <Card key={ipo.id} className="border-border/80 rounded-xl overflow-hidden bg-card">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-bold text-lg text-foreground">{ipo.ipo_name}</h3>
+                          <Badge variant="outline" className="bg-purple-100 text-purple-700 border-purple-200">
+                            {ipo.boardtype || "MAINBOARD"}
+                          </Badge>
+                        </div>
+                        <CardDescription>Price Band: ₹{ipo.price_band}</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <Button variant="secondary" className="w-full" disabled>
+                          Coming Soon
+                        </Button>
+                      </CardContent>
+                    </Card>
                   ))}
                 </div>
               ) : (
                 <Card className="p-12 text-center">
-                  <p className="text-muted-foreground">No upcoming IPOs at the moment.</p>
+                  <p className="text-muted-foreground">No upcoming IPOs.</p>
                 </Card>
               )}
             </TabsContent>
@@ -402,7 +326,12 @@ export default function IPOBidding() {
               {listedIPOs.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {listedIPOs.map((ipo) => (
-                    <IPOCard key={ipo.id} ipo={ipo} />
+                    <Card key={ipo.id} className="border-border/80 rounded-xl bg-card">
+                      <CardHeader className="pb-3">
+                        <h3 className="font-bold text-lg text-foreground">{ipo.ipo_name}</h3>
+                        <CardDescription>Listed on {new Date(ipo.listing_date).toLocaleDateString('en-GB')}</CardDescription>
+                      </CardHeader>
+                    </Card>
                   ))}
                 </div>
               ) : (
@@ -415,283 +344,217 @@ export default function IPOBidding() {
         )}
       </div>
 
-      {/* RICH IPO APPLICATION DASHBOARD DIALOG */}
+      {/* ── ANGEL ONE STYLE IPO APPLICATION POPUP MODAL ───────────────────────── */}
       <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-          <DialogHeader className="border-b pb-4">
-            <div className="flex items-center justify-between flex-wrap gap-2 pr-6">
-              <div>
-                <DialogTitle className="font-display text-2xl font-bold flex items-center gap-2 text-foreground">
-                  {selectedIPO?.ipo_name}
-                </DialogTitle>
-                <DialogDescription className="mt-1 text-xs">
-                  {selectedIPO?.type} Issue • Cut-off Price Bidding Dashboard
-                </DialogDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge className={isSME ? "bg-amber-500 text-white" : "bg-primary text-primary-foreground"}>
-                  {selectedIPO?.boardtype?.toUpperCase() || "MAINBOARD"}
-                </Badge>
-                {selectedIPO?.gmp && selectedIPO.gmp > 0 && (
-                  <Badge variant="outline" className="bg-success/10 text-success border-success/30 font-bold">
-                    GMP: +₹{selectedIPO.gmp}
-                  </Badge>
-                )}
-              </div>
-            </div>
-          </DialogHeader>
-
-          <div className="space-y-6 pt-4">
-            {/* Board Type & Category Selector */}
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
-                <UserCheck className="h-4 w-4 text-primary" />
-                Select Investor Category
-              </Label>
-
-              {!isSME ? (
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInvestorType('Retail');
-                      if (lotCount > 13) setLotCount(13);
-                    }}
-                    className={`p-3 rounded-xl border text-left transition-all relative ${
-                      investorType === 'Retail'
-                        ? 'border-primary bg-primary/10 ring-2 ring-primary/30 shadow-sm'
-                        : 'border-border hover:border-primary/40 bg-card'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-sm text-foreground">Retail (RII)</span>
-                      <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-                    </div>
-                    <p className="text-[11px] text-muted-foreground mt-1">Up to ₹2,00,000</p>
-                    <p className="text-[10px] text-success font-semibold mt-1">Best for Retailers</p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInvestorType('sHNI');
-                      if (lotCount < 14) setLotCount(14);
-                    }}
-                    className={`p-3 rounded-xl border text-left transition-all ${
-                      investorType === 'sHNI'
-                        ? 'border-primary bg-primary/10 ring-2 ring-primary/30 shadow-sm'
-                        : 'border-border hover:border-primary/40 bg-card'
-                    }`}
-                  >
-                    <div className="font-bold text-sm text-foreground">Small HNI (sNII)</div>
-                    <p className="text-[11px] text-muted-foreground mt-1">₹2L to ₹10L</p>
-                    <p className="text-[10px] text-primary font-semibold mt-1">Min 14 Lots</p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInvestorType('bHNI');
-                      if (lotCount < 70) setLotCount(70);
-                    }}
-                    className={`p-3 rounded-xl border text-left transition-all ${
-                      investorType === 'bHNI'
-                        ? 'border-primary bg-primary/10 ring-2 ring-primary/30 shadow-sm'
-                        : 'border-border hover:border-primary/40 bg-card'
-                    }`}
-                  >
-                    <div className="font-bold text-sm text-foreground">Big HNI (bNII)</div>
-                    <p className="text-[11px] text-muted-foreground mt-1">Above ₹10 Lakhs</p>
-                    <p className="text-[10px] text-accent font-semibold mt-1">High Allocation</p>
-                  </button>
-                </div>
-              ) : (
-                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200">
-                  <div className="flex items-center gap-2 font-semibold text-xs">
-                    <Building2 className="h-4 w-4 text-amber-500" />
-                    SME Board IPO Application
-                  </div>
-                  <p className="text-[11px] mt-1 opacity-90">
-                    SME IPOs have higher minimum lot sizes ({selectedIPO?.lot_size} shares/lot) with fixed lot investments starting around ₹1.2L+.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* LOT QUANTITY CALCULATOR DASHBOARD */}
-            <div className="space-y-3 p-4 rounded-xl bg-card border border-border shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="text-sm font-bold text-foreground">Select Number of Lots</Label>
-                  <p className="text-xs text-muted-foreground">1 Lot = {lotShares} shares</p>
-                </div>
-                <Badge variant="outline" className="font-mono text-xs">
-                  Max: {investorType === 'Retail' ? '13 Lots (₹2L)' : '100 Lots'}
-                </Badge>
-              </div>
-
-              {/* Increment / Decrement Lot Selector */}
-              <div className="flex items-center gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="h-12 w-12 rounded-xl text-lg font-bold border-2"
-                  onClick={handleDecrementLots}
-                  disabled={lotCount <= 1}
-                >
-                  <Minus className="h-5 w-5" />
-                </Button>
-
-                <div className="flex-1 text-center py-2 px-4 rounded-xl bg-muted/50 border border-border">
-                  <span className="text-2xl font-extrabold text-foreground">{lotCount}</span>
-                  <span className="text-xs text-muted-foreground ml-1.5 font-medium">{lotCount === 1 ? 'Lot' : 'Lots'}</span>
-                  <div className="text-xs font-semibold text-primary">({totalShares} shares)</div>
-                </div>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="h-12 w-12 rounded-xl text-lg font-bold border-2"
-                  onClick={handleIncrementLots}
-                >
-                  <Plus className="h-5 w-5" />
-                </Button>
-              </div>
-
-              {/* Lot Preset Quick Buttons */}
-              <div className="flex flex-wrap gap-2 pt-1">
-                <span className="text-xs text-muted-foreground self-center mr-1">Quick Sets:</span>
-                {!isSME && investorType === 'Retail' && (
-                  <>
-                    {[1, 2, 5, 10, 13].map((num) => (
-                      <Button
-                        key={num}
-                        type="button"
-                        variant={lotCount === num ? "default" : "outline"}
-                        size="sm"
-                        className="text-xs h-7 px-2.5 rounded-lg"
-                        onClick={() => handleSetLots(num)}
-                      >
-                        {num === 13 ? '13 Lots (Max)' : `${num} ${num === 1 ? 'Lot' : 'Lots'}`}
-                      </Button>
-                    ))}
-                  </>
-                )}
-                {investorType !== 'Retail' && (
-                  <>
-                    {[14, 20, 50, 70].map((num) => (
-                      <Button
-                        key={num}
-                        type="button"
-                        variant={lotCount === num ? "default" : "outline"}
-                        size="sm"
-                        className="text-xs h-7 px-2.5 rounded-lg"
-                        onClick={() => handleSetLots(num)}
-                      >
-                        {num} Lots
-                      </Button>
-                    ))}
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* LIVE INVESTMENT SUMMARY DASHBOARD */}
-            <div className="p-4 rounded-xl bg-gradient-to-br from-primary/10 via-accent/5 to-primary/5 border border-primary/20 space-y-3">
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>Cut-off Bid Price</span>
-                <span className="font-semibold text-foreground">₹{unitPrice.toLocaleString('en-IN')} / share</span>
-              </div>
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>Total Shares Applied</span>
-                <span className="font-semibold text-foreground">{totalShares} Shares ({lotCount} Lots)</span>
-              </div>
-              <div className="h-px bg-border/60" />
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Investment Amount</span>
-                  <div className="text-3xl font-extrabold text-foreground tracking-tight mt-0.5">
-                    ₹{totalInvestmentAmount.toLocaleString('en-IN')}
-                  </div>
-                </div>
-                <Badge variant="outline" className={`px-3 py-1 text-xs font-bold ${
-                  totalInvestmentAmount <= 200000 
-                    ? 'bg-success/10 text-success border-success/30' 
-                    : 'bg-primary/10 text-primary border-primary/30'
-                }`}>
-                  {totalInvestmentAmount <= 200000 ? 'Retail Category' : 'HNI Category'}
-                </Badge>
-              </div>
-            </div>
-
-            {/* APPLICANT DEMAT & PAYMENT DETAILS */}
-            <div className="space-y-4 pt-2">
-              <div className="space-y-2">
-                <Label htmlFor="pan" className="text-xs font-semibold">PAN Number *</Label>
-                <Input
-                  id="pan"
-                  type="text"
-                  maxLength={10}
-                  placeholder="ABCDE1234F"
-                  value={panNumber}
-                  onChange={(e) => setPanNumber(e.target.value.toUpperCase())}
-                  className="uppercase font-mono tracking-wider bg-card"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="dpid" className="text-xs font-semibold">Demat DP ID / Client ID *</Label>
-                <Input
-                  id="dpid"
-                  type="text"
-                  placeholder="1208160012345678 (16 digits)"
-                  value={dpId}
-                  onChange={(e) => setDpId(e.target.value)}
-                  className="font-mono bg-card"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="upi" className="text-xs font-semibold flex items-center justify-between">
-                  <span>UPI Virtual Payment Address (VPA)</span>
-                  <span className="text-[10px] text-muted-foreground font-normal">For ASBA Mandate</span>
-                </Label>
-                <div className="relative">
-                  <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="upi"
-                    type="text"
-                    placeholder="yourname@okhdfcbank or yourname@upi"
-                    value={upiId}
-                    onChange={(e) => setUpiId(e.target.value)}
-                    className="pl-10 font-mono text-sm bg-card"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* SUBMIT BID BUTTON */}
-            <Button
-              className="w-full h-12 text-base font-bold btn-shine shadow-md"
-              type="button"
-              disabled={isSubmitting}
-              onClick={handleBidSubmit}
+        <DialogContent 
+          className="max-w-lg p-0 gap-0 overflow-hidden rounded-2xl border-0 shadow-2xl bg-white dark:bg-card text-foreground"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* HEADER MATCHING ANGEL ONE */}
+          <div className="p-5 pb-4 border-b border-gray-100 dark:border-gray-800 relative">
+            <button
+              onClick={() => handleDialogClose(false)}
+              className="absolute right-4 top-4 p-1.5 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
             >
-              {isSubmitting ? (
-                <span className="flex items-center gap-2">
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Placing IPO Application…
-                </span>
-              ) : (
-                <span className="flex items-center justify-center gap-2">
-                  <Zap className="h-5 w-5 text-amber-300" />
-                  Submit Bid (₹{totalInvestmentAmount.toLocaleString('en-IN')})
-                </span>
-              )}
-            </Button>
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="flex items-center gap-2.5 flex-wrap pr-8">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-foreground tracking-tight">
+                {selectedIPO?.ipo_name}
+              </h2>
+              <span className="px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 uppercase tracking-wider">
+                {selectedIPO?.boardtype || "MAINBOARD"}
+              </span>
+            </div>
+
+            <p className="text-sm font-semibold text-gray-600 dark:text-gray-400 mt-1">
+              ₹{selectedIPO?.price_band.includes("-") ? selectedIPO.price_band : `${selectedIPO?.price_band} - ${selectedIPO?.price_band}`}
+            </p>
           </div>
+
+          <form onSubmit={handleBidSubmit} className="p-5 space-y-5">
+            {/* EXISTING BID ALERT BANNER (ANGEL ONE MATCH) */}
+            {existingBid && (
+              <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-100 dark:border-red-900/50 flex items-center justify-between text-red-700 dark:text-red-300">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <XCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
+                  <span>You have already applied as {existingBid.investor_type}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNumberOfLots(String(existingBid.number_of_lots || 1));
+                    setInvestorType(existingBid.investor_type === 'HNI' ? 'HNI' : 'Retail');
+                    toast({ title: "Modifying Bid", description: "You can now edit your bid details below." });
+                  }}
+                  className="text-xs font-bold text-blue-600 hover:underline uppercase tracking-wider ml-2"
+                >
+                  MODIFY
+                </button>
+              </div>
+            )}
+
+            {/* INVESTOR TYPE BUTTON TOGGLES */}
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                Investor Type
+              </label>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInvestorType('Retail');
+                    if (parseInt(numberOfLots) > 13) setNumberOfLots("13");
+                  }}
+                  className={`px-6 py-2.5 rounded-lg font-semibold text-sm transition-all border ${
+                    investorType === 'Retail'
+                      ? 'border-blue-600 text-blue-600 bg-blue-50/50 dark:bg-blue-950/40 ring-1 ring-blue-600'
+                      : 'border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-300'
+                  }`}
+                >
+                  Retail
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInvestorType('HNI');
+                    if (parseInt(numberOfLots) < 14) setNumberOfLots("14");
+                  }}
+                  className={`px-6 py-2.5 rounded-lg font-semibold text-sm transition-all border ${
+                    investorType === 'HNI'
+                      ? 'border-blue-600 text-blue-600 bg-blue-50/50 dark:bg-blue-950/40 ring-1 ring-blue-600'
+                      : 'border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-300'
+                  }`}
+                >
+                  HNI
+                </button>
+              </div>
+            </div>
+
+            {/* NUMBER OF LOTS & BID PRICE (2 COLUMN LAYOUT) */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Left Column: Number of Lots */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Number Of Lots
+                </label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={investorType === 'Retail' ? 13 : 100}
+                  value={numberOfLots}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setNumberOfLots(val);
+                  }}
+                  className="h-12 border-gray-200 dark:border-gray-800 text-base font-semibold text-gray-900 dark:text-white rounded-lg focus-visible:ring-blue-600"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                  {lotCount} {lotCount === 1 ? 'lot' : 'lots'}: {totalShares} shares
+                </p>
+              </div>
+
+              {/* Right Column: Bid Price */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Bid Price
+                </label>
+                <Input
+                  type="number"
+                  value={bidPrice}
+                  onChange={(e) => setBidPrice(e.target.value)}
+                  className="h-12 border-gray-200 dark:border-gray-800 text-base font-semibold text-gray-900 dark:text-white rounded-lg focus-visible:ring-blue-600"
+                />
+              </div>
+            </div>
+
+            {/* UPI ID CARD CONTAINER (MATCHING ANGEL ONE) */}
+            <div className="p-3.5 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-card flex items-center justify-between shadow-xs">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-bold text-xs">
+                  UPI
+                </div>
+                <div>
+                  <span className="text-[11px] text-gray-500 dark:text-gray-400 font-medium block">UPI ID</span>
+                  {!isEditingUpi ? (
+                    <span className="text-sm font-bold text-gray-900 dark:text-foreground font-mono">
+                      {upiId}
+                    </span>
+                  ) : (
+                    <Input
+                      type="text"
+                      value={upiId}
+                      onChange={(e) => setUpiId(e.target.value)}
+                      className="h-8 text-xs font-mono w-56"
+                      autoFocus
+                    />
+                  )}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsEditingUpi(!isEditingUpi)}
+                className="text-xs font-bold text-blue-600 hover:text-blue-700 uppercase tracking-wider"
+              >
+                {isEditingUpi ? "SAVE" : "EDIT"}
+              </button>
+            </div>
+
+            {/* TOTAL PAYABLE AMOUNT & EXPANDABLE BREAKDOWN */}
+            <div className="pt-2 border-t border-gray-100 dark:border-gray-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setShowAmountBreakdown(!showAmountBreakdown)}
+                  className="flex items-center gap-1 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:text-blue-600"
+                >
+                  <span>Total Payable Amount</span>
+                  {showAmountBreakdown ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </button>
+
+                <span className="text-xl font-extrabold text-gray-900 dark:text-foreground tracking-tight">
+                  ₹{totalPayableAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+
+              {/* Expandable Breakdown Drawer */}
+              {showAmountBreakdown && (
+                <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900 text-xs space-y-1.5 border border-gray-100 dark:border-gray-800 animate-fade-in">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Shares ({lotCount} lots × {lotShares})</span>
+                    <span className="font-semibold text-gray-900 dark:text-foreground">{totalShares} shares</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Bid Price per share</span>
+                    <span className="font-semibold text-gray-900 dark:text-foreground">₹{unitPrice}</span>
+                  </div>
+                  <div className="flex justify-between border-t pt-1.5 font-bold text-gray-900 dark:text-foreground">
+                    <span>Total Investment</span>
+                    <span>₹{totalPayableAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* FULL WIDTH ANGEL ONE PRIMARY APPLY BUTTON */}
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full h-12 text-base font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-md mt-2"
+              >
+                {isSubmitting ? "APPLYING FOR IPO..." : "APPLY FOR IPO"}
+              </Button>
+
+              <p className="text-center text-[11px] text-gray-500 dark:text-gray-400">
+                By applying, you accept the{" "}
+                <a href="#" className="text-blue-600 font-medium hover:underline">
+                  Terms and Conditions
+                </a>
+              </p>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </Layout>
