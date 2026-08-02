@@ -17,11 +17,14 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronUp,
+  Building2,
+  Sparkles
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useIPOBids } from "@/hooks/useIPOBids";
 import { IPO } from "@/hooks/useIPOs";
+import { useIPOLotValidation, calculateIPOLotRules } from "@/hooks/useIPOLotValidation";
 
 interface IPOApplyModalProps {
   ipo: IPO | null;
@@ -66,6 +69,9 @@ export const IPOApplyModal: React.FC<IPOApplyModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isShaking, setIsShaking] = useState(false);
 
+  // Dynamic LOT Validation Hook tailored for Mainboard vs SME
+  const lotRules = useIPOLotValidation(ipo, investorType);
+
   // Success Screen Data
   const [applicationResult, setApplicationResult] = useState<{
     applicationNumber: string;
@@ -76,15 +82,6 @@ export const IPOApplyModal: React.FC<IPOApplyModalProps> = ({
   } | null>(null);
 
   const modalRef = useRef<HTMLDivElement>(null);
-
-  // Calculate upper price band & dynamic SEBI Retail Max Lots
-  const upperPrice = parseFloat(
-    bidPrice || (ipo?.price_band.includes("-") ? ipo.price_band.split("-")[1].trim() : ipo?.price_band) || "0"
-  );
-  const lotShares = ipo?.lot_size || 1;
-  const lotCost = upperPrice * lotShares;
-  // SEBI limit for Retail (RII) is ₹2,00,000
-  const maxRetailLots = lotCost > 0 ? Math.max(1, Math.floor(200000 / lotCost)) : 13;
 
   // Synchronize Auth state with current view when modal opens or user logs in
   useEffect(() => {
@@ -97,10 +94,10 @@ export const IPOApplyModal: React.FC<IPOApplyModalProps> = ({
 
       const defaultUpperPrice = ipo.price_band.includes("-")
         ? ipo.price_band.split("-")[1].trim()
-        : ipo.price_band;
+        : ipo.price_band.replace(/[^0-9.]/g, "");
       setBidPrice(defaultUpperPrice);
-      setNumberOfLots(1);
       setInvestorType("Retail");
+      setNumberOfLots(1);
       setIsEditingUpi(false);
       setShowPayableDetails(false);
 
@@ -139,46 +136,72 @@ export const IPOApplyModal: React.FC<IPOApplyModalProps> = ({
   if (!isOpen || !ipo) return null;
 
   // Calculation helpers
-  const totalShares = numberOfLots * lotShares;
-  const totalPayableAmount = totalShares * upperPrice;
+  const totalShares = numberOfLots * lotRules.lotSize;
+  const totalPayableAmount = totalShares * lotRules.upperPrice;
 
   // CENTRALIZED STRICT LOT VALIDATOR WITH SHAKE & CLAMPING
   const attemptSetLots = (targetValue: number) => {
-    const minLots = 1;
-
-    if (investorType === "Retail" && targetValue > maxRetailLots) {
+    if (targetValue > lotRules.maxLots) {
       // Trigger shake animation
       setIsShaking(true);
       setTimeout(() => setIsShaking(false), 400);
 
-      // Clamp back to maxRetailLots
-      setNumberOfLots(maxRetailLots);
+      // Clamp back to maxLots
+      setNumberOfLots(lotRules.maxLots);
 
-      // Toast notification for limit breach
       toast({
-        title: "Maximum Retail limit reached",
-        description: `Retail applications are limited to ${maxRetailLots} lots (₹2 lakh SEBI limit). Switch to HNI for more lots.`,
+        title: `Maximum ${investorType} limit reached`,
+        description: lotRules.isSME
+          ? `SME ${investorType} applications are limited to ${lotRules.maxLots} ${lotRules.maxLots === 1 ? 'lot' : 'lots'}.`
+          : `Retail applications are limited to ${lotRules.maxLots} lots (₹2 lakh SEBI limit). Switch to HNI for more lots.`,
         variant: "destructive",
       });
       return;
     }
 
-    const maxPermitted = investorType === "Retail" ? maxRetailLots : 100;
-    const clamped = Math.max(minLots, Math.min(targetValue, maxPermitted));
-    setNumberOfLots(clamped);
+    if (targetValue < lotRules.minLots) {
+      // Trigger shake animation
+      setIsShaking(true);
+      setTimeout(() => setIsShaking(false), 400);
+
+      // Clamp back to minLots
+      setNumberOfLots(lotRules.minLots);
+
+      toast({
+        title: `Minimum ${investorType} limit required`,
+        description: `${investorType} applications require at least ${lotRules.minLots} ${lotRules.minLots === 1 ? 'lot' : 'lots'}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setNumberOfLots(targetValue);
   };
 
-  // Handle Investor Type Switch (HNI -> Retail clamping)
-  const handleInvestorTypeSwitch = (type: "Retail" | "HNI") => {
-    setInvestorType(type);
-    if (type === "Retail" && numberOfLots > maxRetailLots) {
-      setNumberOfLots(maxRetailLots);
+  // AUTO INVESTOR TYPE SWITCHING (Retail <-> HNI)
+  const handleInvestorTypeSwitch = (newType: "Retail" | "HNI") => {
+    if (newType === investorType) return;
+
+    const futureRules = calculateIPOLotRules(ipo, newType);
+    setInvestorType(newType);
+
+    if (newType === "HNI") {
+      // Retail -> HNI: Automatically adjust to HNI minimum
+      const adjusted = Math.max(numberOfLots, futureRules.hniMinLots);
+      setNumberOfLots(adjusted);
       toast({
-        title: "Quantity Adjusted",
-        description: `Quantity adjusted to the Retail maximum (${maxRetailLots} lots).`,
+        title: "Category Switched to HNI",
+        description: `Quantity adjusted to HNI minimum (${futureRules.hniMinLots} lots).`,
       });
-    } else if (type === "HNI" && numberOfLots <= maxRetailLots) {
-      setNumberOfLots(maxRetailLots + 1);
+    } else {
+      // HNI -> Retail: If quantity exceeds Retail max, adjust to Retail max
+      if (numberOfLots > futureRules.retailMaxLots) {
+        setNumberOfLots(futureRules.retailMaxLots);
+        toast({
+          title: "Category Switched to Retail",
+          description: `Quantity adjusted to Retail maximum (${futureRules.retailMaxLots} lots).`,
+        });
+      }
     }
   };
 
@@ -234,7 +257,7 @@ export const IPOApplyModal: React.FC<IPOApplyModalProps> = ({
         ipo_id: ipo.id,
         investor_type: investorType,
         number_of_lots: numberOfLots,
-        bid_price: upperPrice,
+        bid_price: lotRules.upperPrice,
         total_investment: totalPayableAmount,
         pan_number: panNumber,
         dp_id: dpId,
@@ -257,8 +280,6 @@ export const IPOApplyModal: React.FC<IPOApplyModalProps> = ({
       setIsSubmitting(false);
     }
   };
-
-  const isSME = ipo.boardtype?.toLowerCase() === "sme";
 
   return (
     <AnimatePresence>
@@ -493,7 +514,7 @@ export const IPOApplyModal: React.FC<IPOApplyModalProps> = ({
               </motion.div>
             )}
 
-            {/* ── 3. IPO APPLICATION MODAL VIEW (DYNAMIC SEBI RETAIL RESTRICTIONS) ── */}
+            {/* ── 3. IPO APPLICATION MODAL VIEW (MAINBOARD vs SME DYNAMIC FLOW) ────── */}
             {currentView === "APPLICATION" && (
               <motion.div
                 key="application-view"
@@ -510,11 +531,11 @@ export const IPOApplyModal: React.FC<IPOApplyModalProps> = ({
                       {ipo.ipo_name}
                     </h2>
                     <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold uppercase tracking-wider ${
-                      isSME
+                      lotRules.isSME
                         ? "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200"
                         : "bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200"
                     }`}>
-                      {ipo.boardtype || "MAINBOARD"}
+                      {lotRules.boardType}
                     </span>
                     {ipo.gmp && ipo.gmp > 0 && (
                       <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
@@ -523,7 +544,7 @@ export const IPOApplyModal: React.FC<IPOApplyModalProps> = ({
                     )}
                   </div>
                   <p className="text-sm font-semibold text-muted-foreground">
-                    Price Band: ₹{ipo.price_band.includes("-") ? ipo.price_band : `${ipo.price_band} - ${ipo.price_band}`}
+                    Price Band: ₹{ipo.price_band.includes("-") ? ipo.price_band : `${ipo.price_band} - ${ipo.price_band}`} • Lot Size: {lotRules.lotSize} shares
                   </p>
                 </div>
 
@@ -543,7 +564,7 @@ export const IPOApplyModal: React.FC<IPOApplyModalProps> = ({
                             : "border-border text-foreground hover:bg-muted/50"
                         }`}
                       >
-                        Retail (Max {maxRetailLots} Lots / ₹2L)
+                        Retail ({lotRules.isSME && lotRules.retailMaxLots === 1 ? "1 Lot" : `Max ${lotRules.retailMaxLots} Lots`})
                       </button>
                       <button
                         type="button"
@@ -554,12 +575,12 @@ export const IPOApplyModal: React.FC<IPOApplyModalProps> = ({
                             : "border-border text-foreground hover:bg-muted/50"
                         }`}
                       >
-                        HNI (Above ₹2L)
+                        HNI ({lotRules.hniMinLots}–{lotRules.hniMaxLots} Lots)
                       </button>
                     </div>
                   </div>
 
-                  {/* LOTS & BID PRICE (2 COLUMN LAYOUT WITH STRICT CLAMPING & ANIMATED SHAKE) */}
+                  {/* LOTS & BID PRICE (2 COLUMN LAYOUT WITH STRICT CLAMPING & SHAKE) */}
                   <div className="grid grid-cols-2 gap-4">
                     {/* Number Of Lots with +/- Controls & Shake animation */}
                     <div className="space-y-1.5">
@@ -576,7 +597,7 @@ export const IPOApplyModal: React.FC<IPOApplyModalProps> = ({
                         {/* MINUS BUTTON */}
                         <button
                           type="button"
-                          disabled={numberOfLots <= 1}
+                          disabled={numberOfLots <= lotRules.minLots}
                           onClick={() => attemptSetLots(numberOfLots - 1)}
                           className="px-3 h-full flex items-center justify-center hover:bg-muted text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         >
@@ -586,8 +607,8 @@ export const IPOApplyModal: React.FC<IPOApplyModalProps> = ({
                         {/* NUMERIC INPUT WITH STRICT PASTE / WHEEL / TYPING ENFORCEMENT */}
                         <input
                           type="number"
-                          min={1}
-                          max={investorType === "Retail" ? maxRetailLots : 100}
+                          min={lotRules.minLots}
+                          max={lotRules.maxLots}
                           value={numberOfLots}
                           onWheel={(e) => (e.target as HTMLElement).blur()}
                           onKeyDown={(e) => {
@@ -605,19 +626,19 @@ export const IPOApplyModal: React.FC<IPOApplyModalProps> = ({
                             if (!isNaN(pasted)) attemptSetLots(pasted);
                           }}
                           onChange={(e) => {
-                            const val = parseInt(e.target.value || "1", 10);
+                            const val = parseInt(e.target.value || String(lotRules.minLots), 10);
                             if (!isNaN(val)) attemptSetLots(val);
                           }}
                           className="w-full text-center font-bold text-base focus:outline-none bg-transparent"
                         />
 
-                        {/* PLUS BUTTON (DISABLED AND GREYED OUT WHEN AT MAX RETAIL LOTS) */}
+                        {/* PLUS BUTTON (DISABLED AT MAX LOTS) */}
                         <button
                           type="button"
-                          disabled={investorType === "Retail" && numberOfLots >= maxRetailLots}
+                          disabled={numberOfLots >= lotRules.maxLots}
                           onClick={() => attemptSetLots(numberOfLots + 1)}
                           className={`px-3 h-full flex items-center justify-center transition-colors ${
-                            investorType === "Retail" && numberOfLots >= maxRetailLots
+                            numberOfLots >= lotRules.maxLots
                               ? "opacity-40 cursor-not-allowed bg-muted/60 text-muted-foreground"
                               : "hover:bg-muted text-foreground"
                           }`}
@@ -639,63 +660,36 @@ export const IPOApplyModal: React.FC<IPOApplyModalProps> = ({
                       <input
                         type="number"
                         readOnly
-                        value={upperPrice}
+                        value={lotRules.upperPrice}
                         className="w-full h-11 px-3 rounded-xl border border-input bg-muted/30 font-bold text-base text-foreground focus:outline-none"
                       />
                       <p className="text-[11px] text-emerald-600 font-semibold">Cut-off Price Applied</p>
                     </div>
                   </div>
 
-                  {/* AMBER HELPER TEXT FOR RETAIL LIMIT */}
-                  {investorType === "Retail" && (
-                    <p className="text-[11px] text-amber-700 dark:text-amber-400 font-medium flex items-start gap-1.5 bg-amber-50 dark:bg-amber-950/40 p-2.5 rounded-xl border border-amber-200 dark:border-amber-900/50">
-                      <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                      <span>
-                        Retail applications are limited to <strong>{maxRetailLots} lots</strong> (₹2 lakh SEBI limit). Select HNI for larger applications.
-                      </span>
-                    </p>
-                  )}
+                  {/* DYNAMIC HELPER TEXT tailored for Mainboard vs SME */}
+                  <p className="text-[11px] text-amber-800 dark:text-amber-300 font-medium flex items-start gap-1.5 bg-amber-50 dark:bg-amber-950/40 p-2.5 rounded-xl border border-amber-200 dark:border-amber-900/50">
+                    <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <span>{lotRules.helperText}</span>
+                  </p>
 
-                  {/* QUICK LOT PRESETS (DYNAMICALLY FILTERED BY CATEGORY) */}
+                  {/* QUICK LOT PRESETS (DYNAMICALLY TAILORED) */}
                   <div className="flex flex-wrap gap-1.5 items-center text-xs">
                     <span className="text-muted-foreground text-[11px] font-medium mr-1">Quick Presets:</span>
-                    {investorType === "Retail" ? (
-                      <>
-                        {[1, 2, 5, 10, maxRetailLots]
-                          .filter((val, idx, arr) => arr.indexOf(val) === idx && val <= maxRetailLots)
-                          .map((lots) => (
-                            <button
-                              key={lots}
-                              type="button"
-                              onClick={() => attemptSetLots(lots)}
-                              className={`px-2.5 py-1 rounded-lg font-semibold transition-colors ${
-                                numberOfLots === lots
-                                  ? "bg-[#163A7D] text-white"
-                                  : "bg-muted hover:bg-muted/80 text-foreground"
-                              }`}
-                            >
-                              {lots === maxRetailLots ? `${lots} Lots (Max)` : `${lots} ${lots === 1 ? "Lot" : "Lots"}`}
-                            </button>
-                          ))}
-                      </>
-                    ) : (
-                      <>
-                        {[maxRetailLots + 1, 20, 50, 70, 100].map((lots) => (
-                          <button
-                            key={lots}
-                            type="button"
-                            onClick={() => attemptSetLots(lots)}
-                            className={`px-2.5 py-1 rounded-lg font-semibold transition-colors ${
-                              numberOfLots === lots
-                                ? "bg-[#163A7D] text-white"
-                                : "bg-muted hover:bg-muted/80 text-foreground"
-                            }`}
-                          >
-                            {lots} Lots
-                          </button>
-                        ))}
-                      </>
-                    )}
+                    {lotRules.quickPresets.map((lots) => (
+                      <button
+                        key={lots}
+                        type="button"
+                        onClick={() => attemptSetLots(lots)}
+                        className={`px-2.5 py-1 rounded-lg font-semibold transition-colors ${
+                          numberOfLots === lots
+                            ? "bg-[#163A7D] text-white"
+                            : "bg-muted hover:bg-muted/80 text-foreground"
+                        }`}
+                      >
+                        {lots === lotRules.maxLots ? `${lots} (Max)` : `${lots} ${lots === 1 ? "Lot" : "Lots"}`}
+                      </button>
+                    ))}
                   </div>
 
                   {/* UPI ID CARD CONTAINER */}
@@ -749,12 +743,12 @@ export const IPOApplyModal: React.FC<IPOApplyModalProps> = ({
                     {showPayableDetails && (
                       <div className="p-3 rounded-xl bg-muted/40 text-xs space-y-1 border border-border">
                         <div className="flex justify-between text-muted-foreground">
-                          <span>Total Shares ({numberOfLots} lots × {lotShares})</span>
+                          <span>Total Shares ({numberOfLots} lots × {lotRules.lotSize})</span>
                           <span className="font-semibold text-foreground">{totalShares} shares</span>
                         </div>
                         <div className="flex justify-between text-muted-foreground">
                           <span>Bid Price per share</span>
-                          <span className="font-semibold text-foreground">₹{upperPrice}</span>
+                          <span className="font-semibold text-foreground">₹{lotRules.upperPrice}</span>
                         </div>
                         <div className="flex justify-between font-bold border-t pt-1 text-foreground">
                           <span>Investment Amount</span>
