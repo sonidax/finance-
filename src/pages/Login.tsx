@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,11 +11,15 @@ import { useAuth } from "@/hooks/useAuth";
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const { signIn } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({ email: "", password: "" });
+
+  const fromPath = location.state?.from || "/ipo-bidding";
+  const applyIpoId = location.state?.applyIpoId;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,8 +30,13 @@ export default function Login() {
     setIsLoading(true);
     try {
       await signIn(formData.email, formData.password);
-      toast({ title: "Login Successful", description: "Welcome back to DM Finance Services!" });
-      navigate("/");
+      toast({ title: "Login Successful", description: "Welcome back! Directing to IPO Application..." });
+      
+      if (applyIpoId) {
+        navigate(`/ipo-bidding?applyIpoId=${applyIpoId}`);
+      } else {
+        navigate(fromPath);
+      }
     } catch (err: any) {
       toast({ title: "Login Failed", description: err.message || "Invalid credentials", variant: "destructive" });
     } finally {
@@ -46,7 +55,9 @@ export default function Login() {
               </div>
             </div>
             <h1 className="font-display text-3xl font-bold text-foreground">Welcome Back</h1>
-            <p className="text-muted-foreground mt-2">Sign in to your DM Services account</p>
+            <p className="text-muted-foreground mt-2">
+              {applyIpoId ? "Sign in to complete your IPO Application" : "Sign in to your DM Services account"}
+            </p>
           </div>
 
           <Card>
@@ -96,13 +107,19 @@ export default function Login() {
                 </div>
 
                 <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? "Signing in..." : "Sign In"}
+                  {isLoading ? "Signing in..." : "Sign In & Continue"}
                 </Button>
               </form>
 
               <div className="mt-6 text-center text-sm">
                 <span className="text-muted-foreground">Don't have an account? </span>
-                <Link to="/signup" className="text-primary font-medium hover:underline">Sign up</Link>
+                <Link 
+                  to="/signup" 
+                  state={{ from: fromPath, applyIpoId }} 
+                  className="text-primary font-medium hover:underline"
+                >
+                  Sign up
+                </Link>
               </div>
             </CardContent>
           </Card>

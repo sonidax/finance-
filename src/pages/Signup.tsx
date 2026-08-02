@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +12,7 @@ import { useAuth } from "@/hooks/useAuth";
 
 export default function Signup() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const { signUp } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
@@ -20,6 +21,9 @@ export default function Signup() {
   const [formData, setFormData] = useState({
     name: "", email: "", phone: "", password: "", confirmPassword: "",
   });
+
+  const fromPath = location.state?.from || "/ipo-bidding";
+  const applyIpoId = location.state?.applyIpoId;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,7 +48,11 @@ export default function Signup() {
     try {
       await signUp(formData.email, formData.password, formData.name, formData.phone);
       toast({ title: "Account Created", description: "Welcome to DM Finance Services!" });
-      navigate("/login");
+      if (applyIpoId) {
+        navigate(`/ipo-bidding?applyIpoId=${applyIpoId}`);
+      } else {
+        navigate(fromPath);
+      }
     } catch (err: any) {
       toast({ title: "Signup Failed", description: err.message || "An error occurred", variant: "destructive" });
     } finally {
@@ -134,13 +142,13 @@ export default function Signup() {
                 </div>
 
                 <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? "Creating Account..." : "Create Account"}
+                  {isLoading ? "Creating Account..." : "Create Account & Continue"}
                 </Button>
               </form>
 
               <div className="mt-6 text-center text-sm">
                 <span className="text-muted-foreground">Already have an account? </span>
-                <Link to="/login" className="text-primary font-medium hover:underline">Sign in</Link>
+                <Link to="/login" state={{ from: fromPath, applyIpoId }} className="text-primary font-medium hover:underline">Sign in</Link>
               </div>
             </CardContent>
           </Card>
